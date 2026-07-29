@@ -60,7 +60,7 @@ public class JobService {
       this.dynamoDbClient = DynamoDbClient.create();
       this.sqsClient = SqsClient.create();
       if (this.queuePollingEnabled) {
-        scheduler.scheduleAtFixedRate(this::pollQueue, 500, 1000, TimeUnit.MILLISECONDS);
+        scheduler.scheduleAtFixedRate(this::pollQueue, 500, 20_000, TimeUnit.MILLISECONDS);
       }
     } else {
       this.dynamoDbClient = null;
@@ -177,7 +177,7 @@ public class JobService {
     ReceiveMessageRequest request = ReceiveMessageRequest.builder()
         .queueUrl(queueUrl)
         .maxNumberOfMessages(5)
-        .waitTimeSeconds(1)
+        .waitTimeSeconds(20)
         .visibilityTimeout(20)
         .build();
 
