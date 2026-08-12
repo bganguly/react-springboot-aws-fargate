@@ -223,13 +223,12 @@ export default function App() {
         {job && (
           <section className="job">
             <h2>Job Status</h2>
-            <p><strong>ID:</strong> {job.jobId}</p>
-            <p><strong>Status pending:</strong> {formatTimestampWithMs(job.createdAt)}</p>
-            <p><strong>Status processing:</strong> {formatTimestampWithMs(job.processingAt)}</p>
-            <p><strong>Status completed:</strong> {formatTimestampWithMs(job.processedAt)}</p>
             <p><strong>Message:</strong> {job.message}</p>
+            <p><strong>ID:</strong> {job.jobId}</p>
+            <p><strong>Submitted:</strong> {formatTimestampWithMs(job.createdAt)}</p>
+            <p><strong>Processing:</strong> {job.processingAt ? formatTimestampWithMs(job.processingAt) : <span className="waiting">pending&hellip;</span>}</p>
+            <p><strong>Completed:</strong> {job.processedAt ? formatTimestampWithMs(job.processedAt) : <span className="waiting">pending&hellip;</span>}</p>
             {job.result && <p><strong>Result:</strong> {job.result}</p>}
-            <p><strong>Updated:</strong> {new Date(job.updatedAt).toLocaleString()}</p>
           </section>
         )}
       </main>
