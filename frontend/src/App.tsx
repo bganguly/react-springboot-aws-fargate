@@ -14,7 +14,6 @@ interface JobResponse {
   result?: string;
 }
 
-type RuntimeMode = "AWS_DYNAMODB_SQS" | "LOCAL_MEMORY";
 type ServiceStatus = "UNKNOWN" | "STOPPED" | "STARTING" | "RUNNING";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -36,13 +35,6 @@ async function fetchJob(jobId: string): Promise<JobResponse> {
   return (await response.json()) as JobResponse;
 }
 
-async function fetchMode(): Promise<RuntimeMode> {
-  const response = await fetch(`${apiBaseUrl}/jobs/mode`);
-  if (!response.ok) throw new Error(`Fetch mode failed with status ${response.status}`);
-  const payload = (await response.json()) as { mode: RuntimeMode };
-  return payload.mode;
-}
-
 async function fetchServiceStatus(): Promise<ServiceStatus> {
   const response = await fetch(`${adminApiUrl}/service/status`);
   if (!response.ok) throw new Error(`Status check failed: ${response.status}`);
@@ -61,7 +53,6 @@ export default function App() {
   const [job, setJob] = useState<JobResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<RuntimeMode | null>(null);
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>("UNKNOWN");
   const [startError, setStartError] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
@@ -106,14 +97,6 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAdminUrl]);
 
-  useEffect(() => {
-    if (!isConfigured || !serviceReady) return;
-    let cancelled = false;
-    fetchMode()
-      .then((runtimeMode) => { if (!cancelled) setMode(runtimeMode); })
-      .catch((modeError) => { if (!cancelled) setError((modeError as Error).message); });
-    return () => { cancelled = true; };
-  }, [isConfigured, serviceReady]);
 
   useEffect(() => {
     if (!currentJobId) return;
@@ -208,8 +191,6 @@ export default function App() {
             <p>Starting pods&hellip; this takes about 30s.</p>
           </div>
         )}
-
-        {mode && <p><strong>Backend mode:</strong> {mode}</p>}
 
         <form onSubmit={onSubmit} className="stack">
           <label htmlFor="message">Message</label>
