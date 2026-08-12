@@ -6,6 +6,10 @@ React UI + Spring Boot backend designed for an AWS-first deployment model.
 
 ## Using the App
 
+> **First visit — "Start Backend" button**
+>
+> The ECS Fargate service is scaled to zero when idle to avoid paying ~$7/month for an always-on container. If you land on the page and the backend is down, a **Start Backend** button appears. Click it — the UI spins up the service via Lambda + API Gateway, polls until the ALB health check passes (~30–60 s), then reloads automatically. Once the backend is running you can submit jobs normally. The service auto-stops after 10 minutes of inactivity.
+
 1. Click **Create Job** to submit a job — the Spring Boot API writes to DynamoDB and enqueues via SQS.
 2. The UI polls `GET /jobs/{jobId}` and shows the state transition: `PENDING → PROCESSING → COMPLETED`.
 3. In local mode (`LOCAL_MEMORY`) jobs complete instantly in-memory; in AWS mode (`AWS_DYNAMODB_SQS`) processing runs asynchronously via the SQS consumer.
