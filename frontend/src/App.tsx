@@ -200,10 +200,7 @@ export default function App() {
             <p className="history-meta">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} from this browser.</p>
           )}
           {historyState === "unreachable" && (
-            <p className="history-meta">
-              Could not reach the server.{" "}
-              <button type="button" className="retry-link" onClick={loadHistory}>Retry</button>
-            </p>
+            <p className="history-meta">Job history unavailable.</p>
           )}
           {historyState === "api-error" && (
             <p className="history-meta error">Job history temporarily unavailable.</p>

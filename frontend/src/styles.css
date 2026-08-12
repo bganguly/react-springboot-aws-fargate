@@ -119,17 +119,6 @@ button:disabled {
   color: #6b7280;
 }
 
-.retry-link {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--accent);
-  font-size: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-  border-radius: 0;
-}
-
 .history h2 {
   margin-top: 0;
   font-size: 1rem;
