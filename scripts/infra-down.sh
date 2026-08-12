@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REGION="${REGION:-us-east-1}"
 BACKEND_STACK="${BACKEND_STACK:-aws-springboot-backend}"
+ADMIN_STACK="${ADMIN_STACK:-aws-springboot-admin}"
 FRONTEND_STACK="${FRONTEND_STACK:-aws-springboot-frontend}"
 ECS_CLUSTER="aws-springboot-jobs"
 
@@ -88,7 +89,7 @@ BUILD_BUCKET="aws-springboot-build-${ACCOUNT_ID}-${REGION}"
 SITE_BUCKET="aws-springboot-frontend-${ACCOUNT_ID}-${REGION}"
 
 printf '\n  This will destroy:\n'
-printf '    CloudFormation stacks: %s, %s\n' "$BACKEND_STACK" "$FRONTEND_STACK"
+printf '    CloudFormation stacks: %s, %s, %s\n' "$BACKEND_STACK" "$ADMIN_STACK" "$FRONTEND_STACK"
 printf '    ECR repository: aws-springboot-jobs\n'
 printf '    CodeBuild project\n'
 printf '    S3 buckets: %s, %s\n' "$BUILD_BUCKET" "$SITE_BUCKET"
@@ -116,6 +117,7 @@ _delete_stack() {
 }
 
 _delete_stack "$FRONTEND_STACK"
+_delete_stack "$ADMIN_STACK"
 _delete_stack "$BACKEND_STACK"
 
 bold 'Cleaning up ECR and CodeBuild...'
