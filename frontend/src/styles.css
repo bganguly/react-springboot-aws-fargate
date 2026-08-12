@@ -112,6 +112,24 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.service-banner--checking {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.service-banner--checking p {
+  margin: 0;
+  color: #475569;
+}
+
+.service-banner--checking .spinner {
+  border-color: #94a3b8;
+  border-top-color: transparent;
+}
+
 .service-banner--starting {
   display: flex;
   align-items: center;

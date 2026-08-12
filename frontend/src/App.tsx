@@ -175,6 +175,13 @@ export default function App() {
           Submit work from React to Spring Boot on AWS Fargate with DynamoDB + SQS-backed async state updates.
         </p>
 
+        {hasAdminUrl && serviceStatus === "UNKNOWN" && (
+          <div className="service-banner service-banner--checking">
+            <span className="spinner" />
+            <p>Checking backend status&hellip;</p>
+          </div>
+        )}
+
         {hasAdminUrl && serviceStatus === "STOPPED" && (
           <div className="service-banner">
             <p>Backend is scaled down to save cost.</p>
