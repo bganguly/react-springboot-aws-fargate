@@ -74,8 +74,8 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobHistory, setJobHistory] = useState<JobResponse[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  type HistoryState = "loading" | "ok" | "api-error" | "unreachable";
+  const [historyState, setHistoryState] = useState<HistoryState>("loading");
 
   const isConfigured = Boolean(apiBaseUrl);
 
@@ -95,12 +95,12 @@ export default function App() {
   }
 
   function loadHistory() {
-    setHistoryLoading(true);
-    setHistoryError(null);
+    setHistoryState("loading");
     fetchJobs()
-      .then(setJobHistory)
-      .catch((err: Error) => setHistoryError(err.message))
-      .finally(() => setHistoryLoading(false));
+      .then((jobs) => { setJobHistory(jobs); setHistoryState("ok"); })
+      .catch((err: Error) => {
+        setHistoryState(err.message === "Failed to fetch" ? "unreachable" : "api-error");
+      });
   }
 
   useEffect(() => {
@@ -142,7 +142,7 @@ export default function App() {
       setCurrentJobId(created.jobId);
       const initialJob = await fetchJob(created.jobId);
       setJob(initialJob);
-      fetchJobs().then(setJobHistory).catch(() => {});
+      loadHistory();
     } catch (submitError) {
       setError((submitError as Error).message);
     } finally {
@@ -191,11 +191,19 @@ export default function App() {
           </section>
         )}
 
-        {(historyError || jobHistory.length > 0) && (
         <section className="history">
           <h2>My Jobs</h2>
-          {historyError && <p className="history-meta error">Could not reach backend &mdash; jobs will appear once connected.</p>}
-          {jobHistory.length > 0 && (
+          {historyState === "ok" && (
+            <p className="history-meta">
+              {jobHistory.length === 0
+                ? "0 jobs from this browser."
+                : `${jobHistory.length} job${jobHistory.length !== 1 ? "s" : ""} from this browser.`}
+            </p>
+          )}
+          {historyState === "api-error" && (
+            <p className="history-meta error">Job history temporarily unavailable.</p>
+          )}
+          {historyState === "ok" && jobHistory.length > 0 && (
             <div className="history-scroll">
               <table className="history-table">
                 <thead>
@@ -222,7 +230,6 @@ export default function App() {
             </div>
           )}
         </section>
-        )}
       </main>
     </div>
   );
