@@ -3,7 +3,17 @@ package com.example.awsspringboot.service;
 import com.example.awsspringboot.model.JobItem;
 import com.example.awsspringboot.model.JobStatus;
 import jakarta.annotation.PreDestroy;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -19,6 +29,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
@@ -36,6 +47,16 @@ public class JobService {
   private static final String FIELD_PROCESSING_AT = "processingAt";
   private static final String FIELD_PROCESSED_AT = "processedAt";
   private static final String FIELD_RESULT = "result";
+  private static final String FIELD_CLIENT_ID = "clientId";
+  private static final String FIELD_REMOTE_IP = "remoteIp";
+  private static final String FIELD_CITY = "city";
+  private static final String FIELD_COUNTRY = "country";
+  private static final String FIELD_USER_AGENT = "userAgent";
+
+  private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+      .connectTimeout(Duration.ofSeconds(2))
+      .build();
+  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private final ConcurrentMap<String, JobItem> jobs = new ConcurrentHashMap<>();
   private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
@@ -68,9 +89,11 @@ public class JobService {
     }
   }
 
-  public JobItem createJob(String message) {
+  public JobItem createJob(String message, String clientId, String remoteIp, String userAgent) {
     String now = Instant.now().toString();
     String jobId = UUID.randomUUID().toString();
+
+    String[] geo = lookupGeo(remoteIp);
 
     JobItem item = new JobItem();
     item.setJobId(jobId);
@@ -78,6 +101,11 @@ public class JobService {
     item.setStatus(JobStatus.PENDING);
     item.setCreatedAt(now);
     item.setUpdatedAt(now);
+    item.setClientId(clientId);
+    item.setRemoteIp(remoteIp);
+    item.setCity(geo[0]);
+    item.setCountry(geo[1]);
+    item.setUserAgent(userAgent);
 
     if (awsEnabled) {
       createAwsJob(item);
@@ -98,6 +126,43 @@ public class JobService {
     }
 
     return Optional.ofNullable(jobs.get(jobId));
+  }
+
+  public List<JobItem> listJobs(String clientId) {
+    List<JobItem> result;
+    if (awsEnabled) {
+      result = new ArrayList<>();
+      ScanRequest.Builder scanBuilder = ScanRequest.builder().tableName(tableName);
+      if (clientId != null && !clientId.isBlank()) {
+        scanBuilder
+            .filterExpression("clientId = :cid")
+            .expressionAttributeValues(Map.of(":cid", AttributeValue.builder().s(clientId).build()));
+      }
+      dynamoDbClient.scan(scanBuilder.build()).items().forEach(item -> {
+        JobItem mapped = new JobItem();
+        mapped.setJobId(readString(item, FIELD_JOB_ID));
+        mapped.setMessage(readString(item, FIELD_MESSAGE));
+        mapped.setStatus(JobStatus.valueOf(readString(item, FIELD_STATUS)));
+        mapped.setCreatedAt(readString(item, FIELD_CREATED_AT));
+        mapped.setUpdatedAt(readString(item, FIELD_UPDATED_AT));
+        mapped.setProcessingAt(readString(item, FIELD_PROCESSING_AT));
+        mapped.setProcessedAt(readString(item, FIELD_PROCESSED_AT));
+        mapped.setResult(readString(item, FIELD_RESULT));
+        mapped.setClientId(readString(item, FIELD_CLIENT_ID));
+        mapped.setRemoteIp(readString(item, FIELD_REMOTE_IP));
+        mapped.setCity(readString(item, FIELD_CITY));
+        mapped.setCountry(readString(item, FIELD_COUNTRY));
+        mapped.setUserAgent(readString(item, FIELD_USER_AGENT));
+        result.add(mapped);
+      });
+    } else {
+      result = new ArrayList<>(jobs.values());
+      if (clientId != null && !clientId.isBlank()) {
+        result.removeIf(j -> !clientId.equals(j.getClientId()));
+      }
+    }
+    result.sort(Comparator.comparing(JobItem::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
+    return result;
   }
 
   public String getMode() {
@@ -128,18 +193,19 @@ public class JobService {
   private void createAwsJob(JobItem item) {
     assertAwsQueueConfigured();
 
-    Map<String, AttributeValue> attributes = Map.of(
-        FIELD_JOB_ID, AttributeValue.builder().s(item.getJobId()).build(),
-        FIELD_MESSAGE, AttributeValue.builder().s(item.getMessage()).build(),
-        FIELD_STATUS, AttributeValue.builder().s(item.getStatus().name()).build(),
-        FIELD_CREATED_AT, AttributeValue.builder().s(item.getCreatedAt()).build(),
-        FIELD_UPDATED_AT, AttributeValue.builder().s(item.getUpdatedAt()).build());
+    Map<String, AttributeValue> attributes = new HashMap<>();
+    attributes.put(FIELD_JOB_ID, AttributeValue.builder().s(item.getJobId()).build());
+    attributes.put(FIELD_MESSAGE, AttributeValue.builder().s(item.getMessage()).build());
+    attributes.put(FIELD_STATUS, AttributeValue.builder().s(item.getStatus().name()).build());
+    attributes.put(FIELD_CREATED_AT, AttributeValue.builder().s(item.getCreatedAt()).build());
+    attributes.put(FIELD_UPDATED_AT, AttributeValue.builder().s(item.getUpdatedAt()).build());
+    putIfNotBlank(attributes, FIELD_CLIENT_ID, item.getClientId());
+    putIfNotBlank(attributes, FIELD_REMOTE_IP, item.getRemoteIp());
+    putIfNotBlank(attributes, FIELD_CITY, item.getCity());
+    putIfNotBlank(attributes, FIELD_COUNTRY, item.getCountry());
+    putIfNotBlank(attributes, FIELD_USER_AGENT, item.getUserAgent());
 
-    PutItemRequest putRequest = PutItemRequest.builder()
-        .tableName(tableName)
-        .item(attributes)
-        .build();
-    dynamoDbClient.putItem(putRequest);
+    dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(attributes).build());
 
     sqsClient.sendMessage(SendMessageRequest.builder()
         .queueUrl(queueUrl)
@@ -247,6 +313,33 @@ public class JobService {
         .queueUrl(queueUrl)
         .receiptHandle(receiptHandle)
         .build());
+  }
+
+  private String[] lookupGeo(String ip) {
+    if (ip == null || ip.isBlank() || ip.equals("127.0.0.1") || ip.startsWith("192.168.") || ip.startsWith("10.")) {
+      return new String[]{null, null};
+    }
+    try {
+      HttpRequest req = HttpRequest.newBuilder()
+          .uri(URI.create("http://ip-api.com/json/" + ip + "?fields=city,country"))
+          .timeout(Duration.ofSeconds(2))
+          .GET()
+          .build();
+      HttpResponse<String> resp = HTTP_CLIENT.send(req, HttpResponse.BodyHandlers.ofString());
+      JsonNode node = MAPPER.readTree(resp.body());
+      return new String[]{
+          node.has("city") ? node.get("city").asText(null) : null,
+          node.has("country") ? node.get("country").asText(null) : null
+      };
+    } catch (Exception e) {
+      return new String[]{null, null};
+    }
+  }
+
+  private void putIfNotBlank(Map<String, AttributeValue> map, String key, String value) {
+    if (value != null && !value.isBlank()) {
+      map.put(key, AttributeValue.builder().s(value).build());
+    }
   }
 
   private String readString(Map<String, AttributeValue> item, String key) {

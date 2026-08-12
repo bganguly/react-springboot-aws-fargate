@@ -12,6 +12,9 @@ interface JobResponse {
   processingAt?: string;
   processedAt?: string;
   result?: string;
+  city?: string;
+  country?: string;
+  userAgent?: string;
 }
 
 type ServiceStatus = "UNKNOWN" | "STOPPED" | "STARTING" | "RUNNING";
@@ -19,14 +22,46 @@ type ServiceStatus = "UNKNOWN" | "STOPPED" | "STARTING" | "RUNNING";
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const adminApiUrl = (import.meta.env.VITE_ADMIN_API_URL ?? "").replace(/\/$/, "");
 
+function getClientId(): string {
+  let id = localStorage.getItem("jobClientId");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("jobClientId", id);
+  }
+  return id;
+}
+const CLIENT_ID = getClientId();
+
+function parseUserAgent(ua?: string | null): string {
+  if (!ua) return "Unknown";
+  let browser = "Unknown";
+  if (ua.includes("Edg/")) browser = "Edge";
+  else if (ua.includes("Chrome/")) browser = "Chrome";
+  else if (ua.includes("Firefox/")) browser = "Firefox";
+  else if (ua.includes("Safari/")) browser = "Safari";
+  let os = "Unknown";
+  if (ua.includes("Android")) os = "Android";
+  else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
+  else if (ua.includes("Windows")) os = "Windows";
+  else if (ua.includes("Mac OS X")) os = "macOS";
+  else if (ua.includes("Linux")) os = "Linux";
+  return `${browser} / ${os}`;
+}
+
 async function createJob(message: string): Promise<{ jobId: string; status: JobStatus }> {
   const response = await fetch(`${apiBaseUrl}/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message })
+    body: JSON.stringify({ message, clientId: CLIENT_ID })
   });
   if (!response.ok) throw new Error(`Create job failed with status ${response.status}`);
   return (await response.json()) as { jobId: string; status: JobStatus };
+}
+
+async function fetchJobs(): Promise<JobResponse[]> {
+  const response = await fetch(`${apiBaseUrl}/jobs?clientId=${encodeURIComponent(CLIENT_ID)}`);
+  if (!response.ok) throw new Error(`Fetch jobs failed: ${response.status}`);
+  return (await response.json()) as JobResponse[];
 }
 
 async function fetchJob(jobId: string): Promise<JobResponse> {
@@ -55,6 +90,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>("UNKNOWN");
   const [startError, setStartError] = useState<string | null>(null);
+  const [jobHistory, setJobHistory] = useState<JobResponse[]>([]);
   const pollRef = useRef<number | null>(null);
 
   const isConfigured = useMemo(() => Boolean(apiBaseUrl), []);
@@ -91,6 +127,7 @@ export default function App() {
         if (cancelled) return;
         setServiceStatus(s);
         if (s === "STARTING") startBackendPoll();
+        if (s === "RUNNING") fetchJobs().then(setJobHistory).catch(() => {});
       })
       .catch(() => { });
     return () => { cancelled = true; };
@@ -106,7 +143,10 @@ export default function App() {
         const data = await fetchJob(currentJobId);
         if (!cancelled) {
           setJob(data);
-          if (data.status === "COMPLETED") window.clearInterval(pollInterval);
+          if (data.status === "COMPLETED") {
+            window.clearInterval(pollInterval);
+            fetchJobs().then(setJobHistory).catch(() => {});
+          }
         }
       } catch (pollError) {
         if (!cancelled) setError((pollError as Error).message);
@@ -159,6 +199,7 @@ export default function App() {
       setCurrentJobId(created.jobId);
       const initialJob = await fetchJob(created.jobId);
       setJob(initialJob);
+      fetchJobs().then(setJobHistory).catch(() => {});
     } catch (submitError) {
       setError((submitError as Error).message);
     } finally {
@@ -229,6 +270,36 @@ export default function App() {
             <p><strong>Processing:</strong> {job.processingAt ? formatTimestampWithMs(job.processingAt) : <span className="waiting">pending&hellip;</span>}</p>
             <p><strong>Completed:</strong> {job.processedAt ? formatTimestampWithMs(job.processedAt) : <span className="waiting">pending&hellip;</span>}</p>
             {job.result && <p><strong>Result:</strong> {job.result}</p>}
+          </section>
+        )}
+
+        {jobHistory.length > 0 && (
+          <section className="history">
+            <h2>My Jobs</h2>
+            <div className="history-scroll">
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th>Message</th>
+                    <th>Status</th>
+                    <th>Location</th>
+                    <th>Device</th>
+                    <th>Submitted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobHistory.map((j) => (
+                    <tr key={j.jobId}>
+                      <td title={j.message}>{j.message.length > 40 ? j.message.slice(0, 40) + "…" : j.message}</td>
+                      <td><span className={`status-badge status-badge--${j.status.toLowerCase()}`}>{j.status}</span></td>
+                      <td>{[j.city, j.country].filter(Boolean).join(", ") || "—"}</td>
+                      <td>{parseUserAgent(j.userAgent)}</td>
+                      <td>{formatTimestampWithMs(j.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         )}
       </main>

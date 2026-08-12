@@ -1,5 +1,7 @@
 package com.example.awsspringboot.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 public class JobItem {
   private String jobId;
   private String message;
@@ -9,6 +11,11 @@ public class JobItem {
   private String processingAt;
   private String processedAt;
   private String result;
+  private String clientId;
+  private String remoteIp;
+  private String city;
+  private String country;
+  private String userAgent;
 
   public String getJobId() {
     return jobId;
@@ -72,5 +79,46 @@ public class JobItem {
 
   public void setResult(String result) {
     this.result = result;
+  }
+
+  public String getClientId() {
+    return clientId;
+  }
+
+  public void setClientId(String clientId) {
+    this.clientId = clientId;
+  }
+
+  @JsonIgnore
+  public String getRemoteIp() {
+    return remoteIp;
+  }
+
+  public void setRemoteIp(String remoteIp) {
+    this.remoteIp = remoteIp;
+  }
+
+  public String getCity() {
+    return city;
+  }
+
+  public void setCity(String city) {
+    this.city = city;
+  }
+
+  public String getCountry() {
+    return country;
+  }
+
+  public void setCountry(String country) {
+    this.country = country;
+  }
+
+  public String getUserAgent() {
+    return userAgent;
+  }
+
+  public void setUserAgent(String userAgent) {
+    this.userAgent = userAgent;
   }
 }

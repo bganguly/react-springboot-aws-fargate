@@ -4,6 +4,8 @@ import com.example.awsspringboot.dto.CreateJobRequest;
 import com.example.awsspringboot.dto.CreateJobResponse;
 import com.example.awsspringboot.model.JobItem;
 import com.example.awsspringboot.service.JobService;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -24,7 +27,7 @@ public class JobController {
   }
 
   @PostMapping
-  public ResponseEntity<?> createJob(@RequestBody CreateJobRequest request) {
+  public ResponseEntity<?> createJob(@RequestBody CreateJobRequest request, HttpServletRequest httpRequest) {
     String message = request.getMessage() == null ? "" : request.getMessage().trim();
 
     if (message.isEmpty()) {
@@ -32,9 +35,24 @@ public class JobController {
           .body(Map.of("error", "message is required"));
     }
 
-    JobItem item = jobService.createJob(message);
+    String remoteIp = extractClientIp(httpRequest);
+    String userAgent = httpRequest.getHeader("User-Agent");
+    JobItem item = jobService.createJob(message, request.getClientId(), remoteIp, userAgent);
     return ResponseEntity.status(HttpStatus.ACCEPTED)
         .body(new CreateJobResponse(item.getJobId(), item.getStatus()));
+  }
+
+  private String extractClientIp(HttpServletRequest request) {
+    String xff = request.getHeader("X-Forwarded-For");
+    if (xff != null && !xff.isBlank()) {
+      return xff.split(",")[0].trim();
+    }
+    return request.getRemoteAddr();
+  }
+
+  @GetMapping
+  public List<JobItem> listJobs(@RequestParam(required = false) String clientId) {
+    return jobService.listJobs(clientId);
   }
 
   @GetMapping("/{jobId}")
