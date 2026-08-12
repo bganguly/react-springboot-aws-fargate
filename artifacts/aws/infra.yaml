@@ -13,7 +13,7 @@ Parameters:
     Description: ECR image URI for backend container
   DesiredCount:
     Type: Number
-    Default: 1
+    Default: 0
 
 Resources:
   JobsTable:
@@ -221,6 +221,7 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn: JobsListener
     Properties:
+      ServiceName: aws-springboot-jobs-service
       Cluster: !Ref JobsCluster
       DesiredCount: !Ref DesiredCount
       LaunchType: FARGATE
@@ -245,6 +246,10 @@ Outputs:
     Value: !Ref JobsQueue
   ClusterName:
     Value: !Ref JobsCluster
+  ServiceName:
+    Value: aws-springboot-jobs-service
+  LoadBalancerFullName:
+    Value: !GetAtt JobsLoadBalancer.LoadBalancerFullName
   ApiBaseUrl:
     Value: !Sub "http://${JobsLoadBalancer.DNSName}"
   ApiHttpsUrl:

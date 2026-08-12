@@ -61,7 +61,7 @@ if [[ -n "$_ECS_SVC" && "$_ECS_SVC" != "None" ]]; then
     --query 'services[0].desiredCount' --output text 2>/dev/null || true)
 fi
 printf '\n  ECS cluster: %s  desired-count: %s\n' "$ECS_CLUSTER" "${_ECS_COUNT:-unknown}"
-printf '  [1] Start now  [2] Stop now  [3] Suspend schedule  [4] Resume schedule  [enter] Tear down: '
+printf '  [1] Start now  [2] Stop now  [enter] Tear down: '
 read -r _PRE_ACTION
 
 case "${_PRE_ACTION:-}" in
@@ -79,10 +79,6 @@ case "${_PRE_ACTION:-}" in
       --desired-count 0 --region "$REGION" --no-cli-pager >/dev/null \
       && green '  ECS service stopped — desired-count set to 0.' \
       || red '  Failed to stop ECS service.'
-    exit 0
-    ;;
-  3|4)
-    dim '  No scheduler configured for this project.'
     exit 0
     ;;
 esac

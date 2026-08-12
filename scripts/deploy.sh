@@ -5,10 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 REGION="${REGION:-us-east-1}"
 BACKEND_STACK="${BACKEND_STACK:-aws-springboot-backend}"
+ADMIN_STACK="${ADMIN_STACK:-aws-springboot-admin}"
 FRONTEND_STACK="${FRONTEND_STACK:-aws-springboot-frontend}"
 ECR_REPO="aws-springboot-jobs"
 
-echo "[1/5] Checking AWS credentials..."
+echo "[1/6] Checking AWS credentials..."
 aws sts get-caller-identity >/dev/null 2>&1 || { echo "  Run: aws configure"; exit 1; }
 ACCOUNT_ID="${ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}"
 printf '  Credentials valid: %s\n' "$(aws sts get-caller-identity --query Arn --output text 2>/dev/null)"
@@ -62,13 +63,13 @@ if [[ -z "${SUBNET_A:-}" || -z "${SUBNET_B:-}" ]]; then
 fi
 
 echo ""
-echo "[2/5] Provisioning ECR repository..."
+echo "[2/6] Provisioning ECR repository..."
 aws ecr describe-repositories --repository-names "$ECR_REPO" --region "$REGION" >/dev/null 2>&1 || \
   aws ecr create-repository --repository-name "$ECR_REPO" --region "$REGION" >/dev/null
 printf '  ECR repo ready.\n'
 
 echo ""
-echo "[3/5] Verifying ECR image..."
+echo "[3/6] Verifying ECR image..."
 _REMOTE_SHA="$(git -C "$ROOT_DIR" ls-remote origin HEAD 2>/dev/null | cut -c1-7)"
 _DEPLOY_TAG="${_REMOTE_SHA:-$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "latest")}"
 
@@ -103,7 +104,7 @@ printf '  Image %s found in ECR.\n' "$_DEPLOY_TAG"
 IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO}:${_DEPLOY_TAG}"
 
 echo ""
-echo "[4/5] Deploying backend (CloudFormation)..."
+echo "[4/6] Deploying backend (CloudFormation)..."
 aws cloudformation deploy \
   --template-file "${ROOT_DIR}/artifacts/aws/infra.yaml" \
   --stack-name "${BACKEND_STACK}" \
@@ -116,8 +117,32 @@ API_HTTPS_URL="$(aws cloudformation describe-stacks \
   --query "Stacks[0].Outputs[?OutputKey=='ApiHttpsUrl'].OutputValue" --output text)"
 printf '  Backend live: %s\n' "$API_HTTPS_URL"
 
+_CLUSTER_NAME="$(aws cloudformation describe-stacks \
+  --region "${REGION}" --stack-name "${BACKEND_STACK}" \
+  --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)"
+_SERVICE_NAME="$(aws cloudformation describe-stacks \
+  --region "${REGION}" --stack-name "${BACKEND_STACK}" \
+  --query "Stacks[0].Outputs[?OutputKey=='ServiceName'].OutputValue" --output text)"
+_ALB_FULL_NAME="$(aws cloudformation describe-stacks \
+  --region "${REGION}" --stack-name "${BACKEND_STACK}" \
+  --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerFullName'].OutputValue" --output text)"
+
 echo ""
-echo "[5/5] Deploying frontend (CloudFormation + S3 sync)..."
+echo "[5/6] Deploying admin lambdas (CloudFormation)..."
+aws cloudformation deploy \
+  --template-file "${ROOT_DIR}/artifacts/aws/admin-lambdas.yaml" \
+  --stack-name "${ADMIN_STACK}" \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --region "${REGION}" \
+  --parameter-overrides ClusterName="${_CLUSTER_NAME}" ServiceName="${_SERVICE_NAME}" LoadBalancerFullName="${_ALB_FULL_NAME}"
+
+ADMIN_API_URL="$(aws cloudformation describe-stacks \
+  --region "${REGION}" --stack-name "${ADMIN_STACK}" \
+  --query "Stacks[0].Outputs[?OutputKey=='AdminApiUrl'].OutputValue" --output text)"
+printf '  Admin API: %s\n' "$ADMIN_API_URL"
+
+echo ""
+echo "[6/6] Deploying frontend (CloudFormation + S3 sync)..."
 aws cloudformation deploy \
   --template-file "${ROOT_DIR}/artifacts/aws/frontend-infra.yaml" \
   --stack-name "${FRONTEND_STACK}" \
@@ -134,7 +159,7 @@ FRONTEND_URL="$(aws cloudformation describe-stacks \
 
 ENV_FILE="${ROOT_DIR}/frontend/.env.production.local"
 trap 'rm -f "${ENV_FILE}"' EXIT
-echo "VITE_API_BASE_URL=${API_HTTPS_URL}" > "${ENV_FILE}"
+printf 'VITE_API_BASE_URL=%s\nVITE_ADMIN_API_URL=%s\n' "${API_HTTPS_URL}" "${ADMIN_API_URL}" > "${ENV_FILE}"
 npm --prefix "${ROOT_DIR}/frontend" install
 npm --prefix "${ROOT_DIR}/frontend" run build
 aws s3 sync "${ROOT_DIR}/frontend/dist" "s3://${SITE_BUCKET_NAME}" --delete --region "${REGION}"
@@ -143,5 +168,6 @@ aws cloudfront create-invalidation --distribution-id "${DISTRIBUTION_ID}" --path
 
 echo ""
 echo "[deploy] Done."
-printf '  API:      %s\n' "$API_HTTPS_URL"
-printf '  Frontend: %s\n' "$FRONTEND_URL"
+printf '  API:       %s\n' "$API_HTTPS_URL"
+printf '  Admin API: %s\n' "$ADMIN_API_URL"
+printf '  Frontend:  %s\n' "$FRONTEND_URL"

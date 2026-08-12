@@ -1,0 +1,263 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Admin control plane for on-demand ECS start/stop with API Gateway and CloudWatch auto-stop.
+
+Parameters:
+  ClusterName:
+    Type: String
+  ServiceName:
+    Type: String
+  LoadBalancerFullName:
+    Type: String
+    Description: ALB LoadBalancerFullName attribute (e.g. app/aws-springboot-jobs-alb/xxxx)
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: job-runner-admin-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ecs-admin-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecs:UpdateService
+                Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/${ClusterName}/${ServiceName}'
+              - Effect: Allow
+                Action: ecs:DescribeServices
+                Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/${ClusterName}/${ServiceName}'
+
+  StartFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: StartJobRunnerService
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          CLUSTER_NAME: !Ref ClusterName
+          SERVICE_NAME: !Ref ServiceName
+      Code:
+        ZipFile: |
+          import boto3, json, os
+
+          def handler(event, context):
+              ecs = boto3.client('ecs')
+              ecs.update_service(
+                  cluster=os.environ['CLUSTER_NAME'],
+                  service=os.environ['SERVICE_NAME'],
+                  desiredCount=1
+              )
+              return {
+                  'statusCode': 200,
+                  'headers': {'Access-Control-Allow-Origin': '*'},
+                  'body': json.dumps({'status': 'starting'})
+              }
+
+  StopFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: StopJobRunnerService
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          CLUSTER_NAME: !Ref ClusterName
+          SERVICE_NAME: !Ref ServiceName
+      Code:
+        ZipFile: |
+          import boto3, json, os
+
+          def handler(event, context):
+              ecs = boto3.client('ecs')
+              ecs.update_service(
+                  cluster=os.environ['CLUSTER_NAME'],
+                  service=os.environ['SERVICE_NAME'],
+                  desiredCount=0
+              )
+              return {
+                  'statusCode': 200,
+                  'headers': {'Access-Control-Allow-Origin': '*'},
+                  'body': json.dumps({'status': 'stopped'})
+              }
+
+  StatusFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: GetJobRunnerServiceStatus
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          CLUSTER_NAME: !Ref ClusterName
+          SERVICE_NAME: !Ref ServiceName
+      Code:
+        ZipFile: |
+          import boto3, json, os
+
+          def handler(event, context):
+              ecs = boto3.client('ecs')
+              resp = ecs.describe_services(
+                  cluster=os.environ['CLUSTER_NAME'],
+                  services=[os.environ['SERVICE_NAME']]
+              )
+              svc = resp['services'][0]
+              running = svc['runningCount']
+              desired = svc['desiredCount']
+              if desired == 0:
+                  status = 'STOPPED'
+              elif running == 0:
+                  status = 'STARTING'
+              else:
+                  status = 'RUNNING'
+              return {
+                  'statusCode': 200,
+                  'headers': {'Access-Control-Allow-Origin': '*'},
+                  'body': json.dumps({'status': status, 'taskCount': running})
+              }
+
+  AdminApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: job-runner-admin-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+
+  AdminApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref AdminApi
+      StageName: '$default'
+      AutoDeploy: true
+
+  StartIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref AdminApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StartFunction.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  StopIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref AdminApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StopFunction.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  StatusIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref AdminApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StatusFunction.Arn}/invocations'
+      PayloadFormatVersion: '2.0'
+
+  StartRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref AdminApi
+      RouteKey: 'POST /admin/start'
+      Target: !Sub 'integrations/${StartIntegration}'
+
+  StopRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref AdminApi
+      RouteKey: 'POST /admin/stop'
+      Target: !Sub 'integrations/${StopIntegration}'
+
+  StatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref AdminApi
+      RouteKey: 'GET /admin/status'
+      Target: !Sub 'integrations/${StatusIntegration}'
+
+  StartPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StartFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/admin/start'
+
+  StopPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StopFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/admin/stop'
+
+  StatusPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StatusFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/admin/status'
+
+  AutoStopTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: job-runner-auto-stop
+
+  AutoStopSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: lambda
+      TopicArn: !Ref AutoStopTopic
+      Endpoint: !GetAtt StopFunction.Arn
+
+  StopFromSNSPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StopFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref AutoStopTopic
+
+  InactivityAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: job-runner-inactivity
+      AlarmDescription: Auto-stop ECS service after 10 min of no ALB traffic
+      Namespace: AWS/ApplicationELB
+      MetricName: RequestCount
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerFullName
+      Statistic: Sum
+      Period: 600
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AutoStopTopic
+
+Outputs:
+  AdminApiUrl:
+    Value: !Sub 'https://${AdminApi}.execute-api.${AWS::Region}.amazonaws.com'
