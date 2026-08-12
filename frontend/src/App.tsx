@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import BackToPortfolio from "./components/BackToPortfolio";
 
 type JobStatus = "PENDING" | "PROCESSING" | "COMPLETED";
@@ -17,7 +17,11 @@ interface JobResponse {
   userAgent?: string;
 }
 
+type ServiceStatus = "UNKNOWN" | "STOPPED" | "STARTING" | "RUNNING";
+type HistoryState = "loading" | "ok" | "api-error" | "unreachable";
+
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const adminApiUrl = (import.meta.env.VITE_ADMIN_API_URL ?? "").replace(/\/$/, "");
 
 function getClientId(): string {
   let id = localStorage.getItem("jobClientId");
@@ -67,17 +71,40 @@ async function fetchJob(jobId: string): Promise<JobResponse> {
   return (await response.json()) as JobResponse;
 }
 
+async function fetchServiceStatus(): Promise<ServiceStatus> {
+  const response = await fetch(`${adminApiUrl}/service/status`);
+  if (!response.ok) throw new Error(`Status check failed: ${response.status}`);
+  const payload = (await response.json()) as { status: ServiceStatus };
+  return payload.status;
+}
+
+async function startService(): Promise<void> {
+  const response = await fetch(`${adminApiUrl}/service/start`, { method: "POST" });
+  if (!response.ok) throw new Error(`Start failed: ${response.status}`);
+}
+
 export default function App() {
   const [message, setMessage] = useState("Build me a Spring Boot sample");
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatus>("UNKNOWN");
+  const [startError, setStartError] = useState<string | null>(null);
   const [jobHistory, setJobHistory] = useState<JobResponse[]>([]);
-  type HistoryState = "loading" | "ok" | "api-error" | "unreachable";
   const [historyState, setHistoryState] = useState<HistoryState>("loading");
+  const pollRef = useRef<number | null>(null);
 
-  const isConfigured = Boolean(apiBaseUrl);
+  const isConfigured = useMemo(() => Boolean(apiBaseUrl), []);
+  const hasAdminUrl = useMemo(() => Boolean(adminApiUrl), []);
+  const serviceReady = !hasAdminUrl || serviceStatus === "RUNNING";
+
+  function stopPoll() {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
 
   function formatTimestampWithMs(iso?: string): string {
     if (!iso) return "-";
@@ -104,9 +131,22 @@ export default function App() {
   }
 
   useEffect(() => {
-    loadHistory();
+    if (!hasAdminUrl) {
+      loadHistory();
+      return;
+    }
+    let cancelled = false;
+    fetchServiceStatus()
+      .then((s) => {
+        if (cancelled) return;
+        setServiceStatus(s);
+        if (s === "STARTING") startBackendPoll();
+        if (s === "RUNNING") loadHistory();
+      })
+      .catch(() => { });
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasAdminUrl]);
 
   useEffect(() => {
     if (!currentJobId) return;
@@ -127,6 +167,36 @@ export default function App() {
     }, 2000);
     return () => { cancelled = true; window.clearInterval(pollInterval); };
   }, [currentJobId]);
+
+  useEffect(() => stopPoll, []);
+
+  function startBackendPoll() {
+    stopPoll();
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const res = await fetch(`${apiBaseUrl}/jobs/mode`);
+        if (res.ok) {
+          stopPoll();
+          window.location.reload();
+        }
+      } catch {
+        // still not reachable, keep polling
+      }
+    }, 5000);
+  }
+
+  async function onClickStart() {
+    setStartError(null);
+    setServiceStatus("STARTING");
+    try {
+      await startService();
+    } catch (err) {
+      setStartError((err as Error).message);
+      setServiceStatus("STOPPED");
+      return;
+    }
+    startBackendPoll();
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -150,6 +220,8 @@ export default function App() {
     }
   }
 
+  const showHistoryContent = !hasAdminUrl || serviceStatus === "RUNNING";
+
   return (
     <div className="page">
       <BackToPortfolio />
@@ -159,6 +231,30 @@ export default function App() {
           Submit work from React to Spring Boot on AWS Fargate with DynamoDB + SQS-backed async state updates.
         </p>
 
+        {hasAdminUrl && serviceStatus === "UNKNOWN" && (
+          <div className="service-banner service-banner--checking">
+            <span className="spinner" />
+            <p>Checking backend status&hellip;</p>
+          </div>
+        )}
+
+        {hasAdminUrl && serviceStatus === "STOPPED" && (
+          <div className="service-banner">
+            <p>Backend is scaled down to save cost.</p>
+            <button type="button" onClick={onClickStart}>
+              Start Backend
+            </button>
+            {startError && <p className="error">{startError}</p>}
+          </div>
+        )}
+
+        {hasAdminUrl && serviceStatus === "STARTING" && (
+          <div className="service-banner service-banner--starting">
+            <span className="spinner" />
+            <p>Starting pods&hellip; this takes about 30s.</p>
+          </div>
+        )}
+
         <form onSubmit={onSubmit} className="stack">
           <label htmlFor="message">Message</label>
           <input
@@ -167,8 +263,9 @@ export default function App() {
             onChange={(event) => setMessage(event.target.value)}
             placeholder="Type work payload"
             required
+            disabled={!serviceReady}
           />
-          <button type="submit" disabled={isSubmitting || !message.trim()}>
+          <button type="submit" disabled={isSubmitting || !message.trim() || !serviceReady}>
             {isSubmitting ? "Submitting..." : "Create Job"}
           </button>
         </form>
@@ -193,19 +290,22 @@ export default function App() {
 
         <section className="history">
           <h2>My Jobs</h2>
-          {historyState === "ok" && jobHistory.length === 0 && (
+          {hasAdminUrl && serviceStatus === "STOPPED" && (
+            <p className="history-meta">Start the backend above to load job history.</p>
+          )}
+          {showHistoryContent && historyState === "ok" && jobHistory.length === 0 && (
             <p className="history-meta">No prior jobs found.</p>
           )}
-          {historyState === "ok" && jobHistory.length > 0 && (
+          {showHistoryContent && historyState === "ok" && jobHistory.length > 0 && (
             <p className="history-meta">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} from this browser.</p>
           )}
-          {historyState === "unreachable" && (
+          {showHistoryContent && historyState === "unreachable" && (
             <p className="history-meta">Job history unavailable.</p>
           )}
-          {historyState === "api-error" && (
+          {showHistoryContent && historyState === "api-error" && (
             <p className="history-meta error">Job history temporarily unavailable.</p>
           )}
-          {historyState === "ok" && jobHistory.length > 0 && (
+          {showHistoryContent && historyState === "ok" && jobHistory.length > 0 && (
             <div className="history-scroll">
               <table className="history-table">
                 <thead>
