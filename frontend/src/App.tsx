@@ -193,11 +193,14 @@ export default function App() {
 
         <section className="history">
           <h2>My Jobs</h2>
-          {(historyState === "ok" || historyState === "unreachable") && jobHistory.length === 0 && (
+          {historyState === "ok" && jobHistory.length === 0 && (
             <p className="history-meta">No prior jobs found.</p>
           )}
           {historyState === "ok" && jobHistory.length > 0 && (
             <p className="history-meta">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} from this browser.</p>
+          )}
+          {historyState === "unreachable" && (
+            <p className="history-meta">Could not load &mdash; backend may be offline.</p>
           )}
           {historyState === "api-error" && (
             <p className="history-meta error">Job history temporarily unavailable.</p>
