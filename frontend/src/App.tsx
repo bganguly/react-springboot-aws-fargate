@@ -44,14 +44,14 @@ async function fetchMode(): Promise<RuntimeMode> {
 }
 
 async function fetchServiceStatus(): Promise<ServiceStatus> {
-  const response = await fetch(`${adminApiUrl}/admin/status`);
+  const response = await fetch(`${adminApiUrl}/service/status`);
   if (!response.ok) throw new Error(`Status check failed with status ${response.status}`);
   const payload = (await response.json()) as { status: ServiceStatus };
   return payload.status;
 }
 
 async function startService(): Promise<void> {
-  const response = await fetch(`${adminApiUrl}/admin/start`, { method: "POST" });
+  const response = await fetch(`${adminApiUrl}/service/start`, { method: "POST" });
   if (!response.ok) throw new Error(`Start failed with status ${response.status}`);
 }
 

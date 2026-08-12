@@ -178,21 +178,21 @@ Resources:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref AdminApi
-      RouteKey: 'POST /admin/start'
+      RouteKey: 'POST /service/start'
       Target: !Sub 'integrations/${StartIntegration}'
 
   StopRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref AdminApi
-      RouteKey: 'POST /admin/stop'
+      RouteKey: 'POST /service/stop'
       Target: !Sub 'integrations/${StopIntegration}'
 
   StatusRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref AdminApi
-      RouteKey: 'GET /admin/status'
+      RouteKey: 'GET /service/status'
       Target: !Sub 'integrations/${StatusIntegration}'
 
   StartPermission:
@@ -201,7 +201,7 @@ Resources:
       FunctionName: !Ref StartFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/admin/start'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/service/start'
 
   StopPermission:
     Type: AWS::Lambda::Permission
@@ -209,7 +209,7 @@ Resources:
       FunctionName: !Ref StopFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/admin/stop'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/service/stop'
 
   StatusPermission:
     Type: AWS::Lambda::Permission
@@ -217,7 +217,7 @@ Resources:
       FunctionName: !Ref StatusFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/admin/status'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AdminApi}/*/*/service/status'
 
   AutoStopTopic:
     Type: AWS::SNS::Topic
