@@ -113,6 +113,12 @@ button:disabled {
   padding-top: 1rem;
 }
 
+.history-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
 .history h2 {
   margin-top: 0;
   font-size: 1rem;

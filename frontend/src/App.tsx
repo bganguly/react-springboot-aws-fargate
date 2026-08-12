@@ -74,6 +74,8 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobHistory, setJobHistory] = useState<JobResponse[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const isConfigured = Boolean(apiBaseUrl);
 
@@ -92,8 +94,18 @@ export default function App() {
     return `${month}/${day}/${year} ${hours12}:${minutes}:${seconds}.${ms} ${period}`;
   }
 
+  function loadHistory() {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    fetchJobs()
+      .then(setJobHistory)
+      .catch((err: Error) => setHistoryError(err.message))
+      .finally(() => setHistoryLoading(false));
+  }
+
   useEffect(() => {
-    fetchJobs().then(setJobHistory).catch(() => {});
+    loadHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -106,7 +118,7 @@ export default function App() {
           setJob(data);
           if (data.status === "COMPLETED") {
             window.clearInterval(pollInterval);
-            fetchJobs().then(setJobHistory).catch(() => {});
+            loadHistory();
           }
         }
       } catch (pollError) {
@@ -179,9 +191,14 @@ export default function App() {
           </section>
         )}
 
-        {jobHistory.length > 0 && (
-          <section className="history">
-            <h2>My Jobs</h2>
+        <section className="history">
+          <h2>My Jobs</h2>
+          {historyLoading && <p className="history-meta">Loading&hellip;</p>}
+          {historyError && <p className="history-meta error">Could not load jobs: {historyError}</p>}
+          {!historyLoading && !historyError && jobHistory.length === 0 && (
+            <p className="history-meta">No jobs yet.</p>
+          )}
+          {jobHistory.length > 0 && (
             <div className="history-scroll">
               <table className="history-table">
                 <thead>
@@ -206,8 +223,8 @@ export default function App() {
                 </tbody>
               </table>
             </div>
-          </section>
-        )}
+          )}
+        </section>
       </main>
     </div>
   );
