@@ -45,14 +45,14 @@ async function fetchMode(): Promise<RuntimeMode> {
 
 async function fetchServiceStatus(): Promise<ServiceStatus> {
   const response = await fetch(`${adminApiUrl}/service/status`);
-  if (!response.ok) throw new Error(`Status check failed with status ${response.status}`);
+  if (!response.ok) throw new Error(`Status check failed: ${response.status}`);
   const payload = (await response.json()) as { status: ServiceStatus };
   return payload.status;
 }
 
 async function startService(): Promise<void> {
   const response = await fetch(`${adminApiUrl}/service/start`, { method: "POST" });
-  if (!response.ok) throw new Error(`Start failed with status ${response.status}`);
+  if (!response.ok) throw new Error(`Start failed: ${response.status}`);
 }
 
 export default function App() {
@@ -63,13 +63,19 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<RuntimeMode | null>(null);
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>("UNKNOWN");
-  const [isStarting, setIsStarting] = useState(false);
-  const startPollRef = useRef<number | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+  const pollRef = useRef<number | null>(null);
 
   const isConfigured = useMemo(() => Boolean(apiBaseUrl), []);
   const hasAdminUrl = useMemo(() => Boolean(adminApiUrl), []);
-
   const serviceReady = !hasAdminUrl || serviceStatus === "RUNNING";
+
+  function stopPoll() {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
 
   function formatTimestampWithMs(iso?: string): string {
     if (!iso) return "-";
@@ -91,7 +97,7 @@ export default function App() {
     let cancelled = false;
     fetchServiceStatus()
       .then((s) => { if (!cancelled) setServiceStatus(s); })
-      .catch(() => { if (!cancelled) setServiceStatus("UNKNOWN"); });
+      .catch(() => { });
     return () => { cancelled = true; };
   }, [hasAdminUrl]);
 
@@ -121,38 +127,31 @@ export default function App() {
     return () => { cancelled = true; window.clearInterval(pollInterval); };
   }, [currentJobId]);
 
-  function stopStartPoll() {
-    if (startPollRef.current !== null) {
-      window.clearInterval(startPollRef.current);
-      startPollRef.current = null;
-    }
-  }
+  useEffect(() => stopPoll, []);
 
   async function onClickStart() {
-    setError(null);
-    setIsStarting(true);
+    setStartError(null);
+    setServiceStatus("STARTING");
     try {
       await startService();
-      setServiceStatus("STARTING");
-      startPollRef.current = window.setInterval(async () => {
-        try {
-          const s = await fetchServiceStatus();
-          setServiceStatus(s);
-          if (s === "RUNNING") {
-            stopStartPoll();
-            setIsStarting(false);
-          }
-        } catch {
-          // keep polling
-        }
-      }, 3000);
-    } catch (startError) {
-      setError((startError as Error).message);
-      setIsStarting(false);
+    } catch (err) {
+      setStartError((err as Error).message);
+      setServiceStatus("STOPPED");
+      return;
     }
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const s = await fetchServiceStatus();
+        setServiceStatus(s);
+        if (s === "RUNNING") {
+          stopPoll();
+          window.location.reload();
+        }
+      } catch {
+        // keep polling
+      }
+    }, 3000);
   }
-
-  useEffect(() => stopStartPoll, []);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -184,24 +183,20 @@ export default function App() {
           Submit work from React to Spring Boot on AWS Fargate with DynamoDB + SQS-backed async state updates.
         </p>
 
-        {hasAdminUrl && serviceStatus !== "RUNNING" && (
+        {hasAdminUrl && serviceStatus === "STOPPED" && (
           <div className="service-banner">
-            {serviceStatus === "STOPPED" && (
-              <>
-                <p className="warning">
-                  Backend is offline to save cost. Start it to submit jobs (takes ~30s).
-                </p>
-                <button type="button" onClick={onClickStart} disabled={isStarting}>
-                  Start Backend
-                </button>
-              </>
-            )}
-            {(serviceStatus === "STARTING" || isStarting) && (
-              <p className="warning">Starting backend, please wait...</p>
-            )}
-            {serviceStatus === "UNKNOWN" && !isStarting && (
-              <p className="warning">Checking backend status...</p>
-            )}
+            <p>Backend is scaled down to save cost.</p>
+            <button type="button" onClick={onClickStart}>
+              Start Backend
+            </button>
+            {startError && <p className="error">{startError}</p>}
+          </div>
+        )}
+
+        {hasAdminUrl && serviceStatus === "STARTING" && (
+          <div className="service-banner service-banner--starting">
+            <span className="spinner" />
+            <p>Starting pods&hellip; this takes about 30s.</p>
           </div>
         )}
 

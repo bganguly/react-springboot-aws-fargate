@@ -112,6 +112,31 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.service-banner--starting {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.service-banner--starting p {
+  margin: 0;
+}
+
+.spinner {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid #92400e;
+  border-top-color: transparent;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes rise {
   from {
     opacity: 0;
