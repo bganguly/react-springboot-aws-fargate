@@ -191,13 +191,10 @@ export default function App() {
           </section>
         )}
 
+        {(historyError || jobHistory.length > 0) && (
         <section className="history">
           <h2>My Jobs</h2>
-          {historyLoading && <p className="history-meta">Loading&hellip;</p>}
-          {historyError && <p className="history-meta error">Could not load jobs: {historyError}</p>}
-          {!historyLoading && !historyError && jobHistory.length === 0 && (
-            <p className="history-meta">No jobs yet.</p>
-          )}
+          {historyError && <p className="history-meta error">Could not reach backend &mdash; jobs will appear once connected.</p>}
           {jobHistory.length > 0 && (
             <div className="history-scroll">
               <table className="history-table">
@@ -225,6 +222,7 @@ export default function App() {
             </div>
           )}
         </section>
+        )}
       </main>
     </div>
   );
