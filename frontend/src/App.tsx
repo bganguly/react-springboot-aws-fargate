@@ -96,9 +96,14 @@ export default function App() {
     if (!hasAdminUrl) return;
     let cancelled = false;
     fetchServiceStatus()
-      .then((s) => { if (!cancelled) setServiceStatus(s); })
+      .then((s) => {
+        if (cancelled) return;
+        setServiceStatus(s);
+        if (s === "STARTING") startBackendPoll();
+      })
       .catch(() => { });
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAdminUrl]);
 
   useEffect(() => {
@@ -129,6 +134,21 @@ export default function App() {
 
   useEffect(() => stopPoll, []);
 
+  function startBackendPoll() {
+    stopPoll();
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const res = await fetch(`${apiBaseUrl}/jobs/mode`);
+        if (res.ok) {
+          stopPoll();
+          window.location.reload();
+        }
+      } catch {
+        // still not reachable, keep polling
+      }
+    }, 5000);
+  }
+
   async function onClickStart() {
     setStartError(null);
     setServiceStatus("STARTING");
@@ -139,18 +159,7 @@ export default function App() {
       setServiceStatus("STOPPED");
       return;
     }
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const s = await fetchServiceStatus();
-        setServiceStatus(s);
-        if (s === "RUNNING") {
-          stopPoll();
-          window.location.reload();
-        }
-      } catch {
-        // keep polling
-      }
-    }, 3000);
+    startBackendPoll();
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
