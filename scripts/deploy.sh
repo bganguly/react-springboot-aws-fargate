@@ -84,22 +84,16 @@ _ecr_image_exists() {
 
 printf '  Checking ECR for image %s...\n' "$_DEPLOY_TAG"
 if ! _ecr_image_exists "$_DEPLOY_TAG"; then
-  if _ecr_image_exists "latest"; then
-    printf '  SHA %s not in ECR (image unchanged) — using latest.\n' "$_DEPLOY_TAG"
-    _DEPLOY_TAG=latest
-  else
-    printf '  No image in ECR yet — waiting for GitHub Actions build (up to 10 min)...\n'
-    _ecr_elapsed=0
-    until _ecr_image_exists "latest"; do
-      if (( _ecr_elapsed >= 600 )); then
-        printf '  Timed out. Check Actions: https://github.com/%s/actions\n' "$_GH_REPO"
-        exit 1
-      fi
-      sleep 15; _ecr_elapsed=$(( _ecr_elapsed + 15 ))
-      printf '  ...%ds\n' "$_ecr_elapsed"
-    done
-    _DEPLOY_TAG=latest
-  fi
+  printf '  Waiting for GitHub Actions to build image %s (up to 15 min)...\n' "$_DEPLOY_TAG"
+  _ecr_elapsed=0
+  until _ecr_image_exists "$_DEPLOY_TAG"; do
+    if (( _ecr_elapsed >= 900 )); then
+      printf '  Timed out. Check Actions: https://github.com/%s/actions\n' "$_GH_REPO"
+      exit 1
+    fi
+    sleep 15; _ecr_elapsed=$(( _ecr_elapsed + 15 ))
+    printf '  ...%ds\n' "$_ecr_elapsed"
+  done
 fi
 printf '  Image %s found in ECR.\n' "$_DEPLOY_TAG"
 
