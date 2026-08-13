@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
@@ -163,6 +164,29 @@ public class JobService {
     }
     result.sort(Comparator.comparing(JobItem::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
     return result;
+  }
+
+  public void deleteJobsByClientId(String clientId) {
+    if (clientId == null || clientId.isBlank()) return;
+    if (awsEnabled) {
+      ScanRequest scanRequest = ScanRequest.builder()
+          .tableName(tableName)
+          .filterExpression("clientId = :cid")
+          .expressionAttributeValues(Map.of(":cid", AttributeValue.builder().s(clientId).build()))
+          .projectionExpression(FIELD_JOB_ID)
+          .build();
+      dynamoDbClient.scan(scanRequest).items().forEach(item -> {
+        String jobId = readString(item, FIELD_JOB_ID);
+        if (jobId != null) {
+          dynamoDbClient.deleteItem(DeleteItemRequest.builder()
+              .tableName(tableName)
+              .key(Map.of(FIELD_JOB_ID, AttributeValue.builder().s(jobId).build()))
+              .build());
+        }
+      });
+    } else {
+      jobs.values().removeIf(j -> clientId.equals(j.getClientId()));
+    }
   }
 
   public String getMode() {

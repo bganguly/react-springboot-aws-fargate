@@ -121,7 +121,12 @@ export default function App() {
     return `${month}/${day}/${year} ${hours12}:${minutes}:${seconds}.${ms} ${period}`;
   }
 
-  function clearHistory() {
+  async function clearHistory() {
+    try {
+      await fetch(`${apiBaseUrl}/jobs?clientId=${encodeURIComponent(CLIENT_ID)}`, { method: "DELETE" });
+    } catch {
+      // proceed regardless
+    }
     localStorage.setItem("jobClientId", crypto.randomUUID());
     window.location.reload();
   }

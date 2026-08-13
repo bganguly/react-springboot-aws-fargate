@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -61,6 +62,15 @@ public class JobController {
         .<ResponseEntity<?>>map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
             .body(Map.of("error", "Job not found")));
+  }
+
+  @DeleteMapping
+  public ResponseEntity<Void> deleteJobs(@RequestParam(required = false) String clientId) {
+    if (clientId == null || clientId.isBlank()) {
+      return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+    }
+    jobService.deleteJobsByClientId(clientId);
+    return ResponseEntity.noContent().build();
   }
 
   @GetMapping("/mode")
