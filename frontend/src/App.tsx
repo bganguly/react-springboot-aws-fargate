@@ -309,7 +309,7 @@ export default function App() {
           {showHistoryContent && historyState === "ok" && jobHistory.length > 0 && (
             <div className="history-header-row">
               <p className="history-meta">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} from this browser.</p>
-              <button type="button" className="btn-clear" onClick={clearHistory}>Clear</button>
+              <button type="button" className="btn-clear" onClick={clearHistory}>Delete All</button>
             </div>
           )}
           {showHistoryContent && historyState === "unreachable" && (

@@ -180,8 +180,8 @@ button:disabled {
 
 .btn-clear {
   background: transparent;
-  color: #9ca3af;
-  border: 1px solid #d1d5db;
+  color: var(--error);
+  border: 1px solid var(--error);
   padding: 0.15rem 0.5rem;
   font-size: 0.75rem;
   border-radius: 6px;
@@ -189,8 +189,7 @@ button:disabled {
 }
 
 .btn-clear:hover {
-  background: #f9fafb;
-  color: #6b7280;
+  background: #fee2e2;
 }
 
 .history-meta {
