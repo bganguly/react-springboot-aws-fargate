@@ -121,6 +121,11 @@ export default function App() {
     return `${month}/${day}/${year} ${hours12}:${minutes}:${seconds}.${ms} ${period}`;
   }
 
+  function clearHistory() {
+    localStorage.setItem("jobClientId", crypto.randomUUID());
+    window.location.reload();
+  }
+
   function loadHistory() {
     setHistoryState("loading");
     fetchJobs()
@@ -297,7 +302,10 @@ export default function App() {
             <p className="history-meta">No prior jobs found.</p>
           )}
           {showHistoryContent && historyState === "ok" && jobHistory.length > 0 && (
-            <p className="history-meta">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} from this browser.</p>
+            <div className="history-header-row">
+              <p className="history-meta">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} from this browser.</p>
+              <button type="button" className="btn-clear" onClick={clearHistory}>Clear</button>
+            </div>
           )}
           {showHistoryContent && historyState === "unreachable" && (
             <p className="history-meta">Job history unavailable.</p>
