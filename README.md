@@ -1,8 +1,10 @@
-# AWS Fargate + DynamoDB + SQS Fullstack Starter
+# Job Runner — React · Spring Boot · AWS Fargate
 
-React UI + Spring Boot backend designed for an AWS-first deployment model.
+Full-stack job queue demo: a React UI submits jobs that Spring Boot writes to **DynamoDB** and enqueues on **SQS**; a worker loop transitions each job `PENDING → PROCESSING → COMPLETED`. The ECS Fargate service scales to zero when idle — a **Start Backend** button triggers a Lambda + API Gateway to spin it up (~30–60 s) — keeping the demo free between sessions. Two runtime modes let the same binary run locally without any AWS dependencies.
 
 **[→ Portfolio demo](https://bganguly.github.io/?open=fargate)**
+
+---
 
 ## Using the App
 
@@ -13,6 +15,21 @@ React UI + Spring Boot backend designed for an AWS-first deployment model.
 1. Click **Create Job** to submit a job — the Spring Boot API writes to DynamoDB and enqueues via SQS.
 2. The UI polls `GET /jobs/{jobId}` and shows the state transition: `PENDING → PROCESSING → COMPLETED`.
 3. In local mode (`LOCAL_MEMORY`) jobs complete instantly in-memory; in AWS mode (`AWS_DYNAMODB_SQS`) processing runs asynchronously via the SQS consumer.
+
+---
+
+| Component | Implementation |
+|---|---|
+| **Frontend** | React 18 + TypeScript + Vite; polls `GET /jobs/{id}` on a 1 s interval until terminal state |
+| **Backend** | Spring Boot 3 on ECS Fargate (:8080); two runtime modes: `LOCAL_MEMORY` (dev) and `AWS_DYNAMODB_SQS` (prod) |
+| **Job store** | DynamoDB `jobs` table keyed on `jobId`; `status` attribute drives the UI state machine |
+| **Async queue** | SQS standard queue + dead-letter queue; Spring Boot worker polls and transitions `PROCESSING → COMPLETED` |
+| **Scale-to-zero** | ECS desired count = 0 at rest; Lambda + API Gateway re-scales on demand and polls ALB health before returning |
+| **Frontend hosting** | S3 static hosting behind CloudFront (HTTPS); Vite build with `VITE_API_BASE_URL` injected at deploy time |
+| **Image build** | AWS CodeBuild builds and pushes the Spring Boot image to ECR from a source zip — no local Docker needed |
+| **IaC** | CloudFormation — VPC, DynamoDB, SQS, ECS cluster + Fargate task, ALB, IAM, CloudWatch logs |
+
+---
 
 ## Live Service
 
@@ -27,16 +44,58 @@ Main UI:
 
 ![Spring Boot Job Runner UI](assets/screenshots/app-ui.png)
 
-## What this project does
+---
 
-- React UI submits jobs and polls status updates.
-- Spring Boot API supports two runtime modes:
-	- `LOCAL_MEMORY`: in-memory jobs for local development.
-	- `AWS_DYNAMODB_SQS`: writes jobs to DynamoDB and enqueues processing via SQS.
-- In AWS mode, queued jobs are processed asynchronously and transition:
-	1. `PENDING`
-	2. `PROCESSING`
-	3. `COMPLETED`
+## Architecture
+
+### Job submission flow — step by step
+
+1. **Browser → React UI** — user clicks Create Job; the UI POSTs `{ "message": "..." }` to the CloudFront-fronted API URL.
+2. **CloudFront → ALB → Spring Boot** — the request reaches the ECS Fargate task; Spring Boot writes a new job record to DynamoDB (`status: PENDING`) and enqueues a message to SQS, returning `202 { jobId, status }`.
+3. **SQS worker loop** — the in-process Spring Boot worker polls the SQS queue; on receipt it updates the DynamoDB record to `PROCESSING`, executes the job, then updates to `COMPLETED`.
+4. **UI polling** — the React UI calls `GET /jobs/{jobId}` on a 1 s interval; when it receives `COMPLETED`, polling stops and the final state is displayed.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant CF as CloudFront
+    participant LB as ALB
+    participant SB as Spring Boot (ECS)
+    participant DY as DynamoDB
+    participant SQ as SQS
+
+    B->>CF: POST /jobs { message }
+    CF->>LB: forward request
+    LB->>SB: POST /jobs
+    SB->>DY: write job (PENDING)
+    SB->>SQ: enqueue job message
+    SB-->>B: 202 { jobId, status: PENDING }
+
+    Note over SB: worker poll loop
+    SB->>SQ: receive message
+    SB->>DY: update status (PROCESSING)
+    SB->>DY: update status (COMPLETED)
+
+    loop every 1 s
+        B->>CF: GET /jobs/{jobId}
+        CF->>SB: forward
+        SB->>DY: read job status
+        DY-->>B: { status }
+    end
+```
+
+### Key design decisions
+
+| Concern | Approach |
+|:--|:--|
+| **Scale-to-zero** | ECS desired count = 0 at rest; Lambda reads the CloudFront domain from SSM and calls `update-service --desired-count 1`, then polls ALB target health — the browser only gets a response once the container is healthy |
+| **Two runtime modes** | `LOCAL_MEMORY` wires an in-memory store + synchronous processor for local dev with no AWS deps; `AWS_DYNAMODB_SQS` is the production path — the same Spring Boot binary, toggled via env vars |
+| **CloudFront in front of ALB** | Avoids browser mixed-content blocking (HTTPS frontend → HTTPS API) and keeps the public API URL stable across backend redeployments |
+| **CodeBuild for image build** | Source zip uploaded to S3 triggers CodeBuild — no local Docker daemon needed; `deploy.sh` works from any machine |
+| **SQS dead-letter queue** | Jobs that fail processing exceed the retry limit are moved to a DLQ for inspection without blocking the main queue |
+| **DynamoDB key design** | Jobs keyed on UUID `jobId`; `status` is a plain string attribute — no secondary indexes needed for the single-item polling path |
+
+---
 
 ## Running
 
@@ -49,6 +108,8 @@ Backend image build/push runs in AWS CodeBuild — local Docker is not required.
 
 `deploy.sh` uploads a source zip to S3, triggers CodeBuild to build and push the Spring Boot image to ECR, then deploys `infra.yaml` (CloudFormation: VPC, DynamoDB, SQS, ECS Fargate, ALB).
 `deploy-frontend.sh` deploys `frontend-infra.yaml` (S3 + CloudFront), builds the React app with `VITE_API_BASE_URL` set to `ApiHttpsUrl`, uploads `dist/` to S3, and invalidates the CloudFront cache.
+
+---
 
 ## Architecture / Topology
 
