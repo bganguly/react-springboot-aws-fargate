@@ -2,7 +2,7 @@
 
 Full-stack job queue demo: a React UI submits jobs that Spring Boot writes to **DynamoDB** and enqueues on **SQS**; a worker loop transitions each job `PENDING → PROCESSING → COMPLETED`. The ECS Fargate service scales to zero when idle — a **Start Backend** button triggers a Lambda + API Gateway to spin it up (~30–60 s) — keeping the demo free between sessions. Two runtime modes let the same binary run locally without any AWS dependencies.
 
-**[→ Portfolio demo](https://bganguly.github.io/?open=fargate)**
+**[→ Portfolio demo](https://bganguly.github.io/#job_runner)**
 
 ---
 
