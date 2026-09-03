@@ -66,27 +66,46 @@ IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO}:${_DEPLOY_T
 echo ""
 echo "[4/5] Deploying backend..."
 
-_ALB_STACK_STATUS="$(aws cloudformation describe-stacks \
-  --stack-name "$BACKEND_STACK" --region "$REGION" \
-  --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo 'NONE')"
-
-_USE_ALB=0
-if [[ "$_ALB_STACK_STATUS" != "NONE" && "$_ALB_STACK_STATUS" != "DELETE_COMPLETE" ]]; then
-  _USE_ALB=1
-  printf '  ALB stack present (%s) — using original ECS Fargate path.\n' "$BACKEND_STACK"
-else
-  printf '\n'
-  printf '  Original showcase intent: ALB + CloudFront + ECS Fargate scale-to-zero pattern.\n'
-  printf '  ALB stack (%s) not present. Default: App Runner (~$6/mo).\n\n' "$BACKEND_STACK"
-  printf '  Re-provision ALB stack (~$21/mo idle — ECS Fargate + ALB + VPC IPs)? [y/N]: '
-  read -r _REBUILD_ALB
-  [[ "${_REBUILD_ALB:-N}" =~ ^[Yy]$ ]] && _USE_ALB=1 || _USE_ALB=0
-fi
-
 API_HTTPS_URL=""
 ADMIN_API_URL=""
 
-if [[ "$_USE_ALB" -eq 1 ]]; then
+printf '\n'
+printf '  Option A — App Runner  (~$6/mo · 0.5 vCPU / 1 GB · DynamoDB + SQS included)\n'
+printf '  Deploy App Runner backend? [y/N]: '
+read -r _DEPLOY_AR
+
+printf '\n'
+printf '  Option B — Original showcase: ALB + ECS Fargate + Lambda start/stop\n'
+printf '  WARNING: ~$21/mo idle  (ALB $16.21 always-on + VPC IPs $4.53 + Fargate ~$6.80 when running)\n'
+printf '  Provision ALB + Fargate stack? [y/N]: '
+read -r _DEPLOY_ALB
+
+if [[ "${_DEPLOY_AR:-N}" =~ ^[Yy]$ && "${_DEPLOY_ALB:-N}" =~ ^[Yy]$ ]]; then
+  printf '  Both selected — App Runner takes precedence. Answer y to only one option.\n'
+  _DEPLOY_ALB=N
+fi
+
+if [[ "${_DEPLOY_AR:-N}" =~ ^[Yy]$ ]]; then
+  aws cloudformation deploy \
+    --template-file "${ROOT_DIR}/artifacts/aws/apprunner.yaml" \
+    --stack-name "${APPRUNNER_STACK}" \
+    --capabilities CAPABILITY_NAMED_IAM \
+    --region "${REGION}" \
+    --parameter-overrides ContainerImage="${IMAGE_URI}"
+
+  API_HTTPS_URL="$(aws cloudformation describe-stacks \
+    --region "${REGION}" --stack-name "${APPRUNNER_STACK}" \
+    --query "Stacks[0].Outputs[?OutputKey=='AppRunnerUrl'].OutputValue" --output text)"
+
+  _AR_ARN="$(aws cloudformation describe-stacks \
+    --region "${REGION}" --stack-name "${APPRUNNER_STACK}" \
+    --query "Stacks[0].Outputs[?OutputKey=='ServiceArn'].OutputValue" --output text 2>/dev/null || true)"
+  if [[ -n "$_AR_ARN" ]]; then
+    aws apprunner start-deployment --service-arn "$_AR_ARN" --region "$REGION" >/dev/null 2>&1 || true
+  fi
+  printf '  App Runner live: %s\n' "$API_HTTPS_URL"
+
+elif [[ "${_DEPLOY_ALB:-N}" =~ ^[Yy]$ ]]; then
   if [[ -z "${VPC_ID:-}" || -z "${SUBNET_A:-}" || -z "${SUBNET_B:-}" ]]; then
     _STACK_PARAMS="$(aws cloudformation describe-stacks \
       --stack-name "$BACKEND_STACK" --region "$REGION" \
@@ -156,25 +175,7 @@ if [[ "$_USE_ALB" -eq 1 ]]; then
     --query "Stacks[0].Outputs[?OutputKey=='AdminApiUrl'].OutputValue" --output text)"
 
 else
-  aws cloudformation deploy \
-    --template-file "${ROOT_DIR}/artifacts/aws/apprunner.yaml" \
-    --stack-name "${APPRUNNER_STACK}" \
-    --capabilities CAPABILITY_NAMED_IAM \
-    --region "${REGION}" \
-    --parameter-overrides ContainerImage="${IMAGE_URI}"
-
-  API_HTTPS_URL="$(aws cloudformation describe-stacks \
-    --region "${REGION}" --stack-name "${APPRUNNER_STACK}" \
-    --query "Stacks[0].Outputs[?OutputKey=='AppRunnerUrl'].OutputValue" --output text)"
-
-  _AR_ARN="$(aws cloudformation describe-stacks \
-    --region "${REGION}" --stack-name "${APPRUNNER_STACK}" \
-    --query "Stacks[0].Outputs[?OutputKey=='ServiceArn'].OutputValue" --output text 2>/dev/null || true)"
-  if [[ -n "$_AR_ARN" ]]; then
-    aws apprunner start-deployment --service-arn "$_AR_ARN" --region "$REGION" >/dev/null 2>&1 || true
-  fi
-
-  printf '  App Runner live: %s\n' "$API_HTTPS_URL"
+  printf '  Skipping backend — frontend will deploy without API URL.\n'
 fi
 
 echo ""
