@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REGION="${REGION:-us-east-1}"
 BACKEND_STACK="${BACKEND_STACK:-aws-springboot-backend}"
+APPRUNNER_STACK="${APPRUNNER_STACK:-aws-springboot-apprunner}"
 ADMIN_STACK="${ADMIN_STACK:-aws-springboot-admin}"
 FRONTEND_STACK="${FRONTEND_STACK:-aws-springboot-frontend}"
 ECS_CLUSTER="aws-springboot-jobs"
@@ -19,6 +20,8 @@ _local_running=0
 lsof -ti:8080 >/dev/null 2>&1 && _local_running=1 || true
 _aws_deployed=0
 aws cloudformation describe-stacks --stack-name "$BACKEND_STACK" --region "$REGION" \
+  >/dev/null 2>&1 && _aws_deployed=1 || true
+aws cloudformation describe-stacks --stack-name "$APPRUNNER_STACK" --region "$REGION" \
   >/dev/null 2>&1 && _aws_deployed=1 || true
 
 printf '\n=== react-springboot-fargate-aws teardown ===\n\n'
@@ -89,7 +92,7 @@ BUILD_BUCKET="aws-springboot-build-${ACCOUNT_ID}-${REGION}"
 SITE_BUCKET="aws-springboot-frontend-${ACCOUNT_ID}-${REGION}"
 
 printf '\n  This will destroy:\n'
-printf '    CloudFormation stacks: %s, %s, %s\n' "$BACKEND_STACK" "$ADMIN_STACK" "$FRONTEND_STACK"
+printf '    CloudFormation stacks: %s, %s, %s, %s\n' "$BACKEND_STACK" "$APPRUNNER_STACK" "$ADMIN_STACK" "$FRONTEND_STACK"
 printf '    ECR repository: aws-springboot-jobs\n'
 printf '    CodeBuild project\n'
 printf '    S3 buckets: %s, %s\n' "$BUILD_BUCKET" "$SITE_BUCKET"
@@ -119,6 +122,7 @@ _delete_stack() {
 _delete_stack "$FRONTEND_STACK"
 _delete_stack "$ADMIN_STACK"
 _delete_stack "$BACKEND_STACK"
+_delete_stack "$APPRUNNER_STACK"
 
 bold 'Cleaning up ECR and CodeBuild...'
 aws ecr delete-repository --repository-name aws-springboot-jobs --force --region "$REGION" \

@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Spring Boot jobs API on App Runner with DynamoDB and SQS.
+  Original showcase used ECS Fargate + ALB (~$21/mo idle); this template
+  replaces the ALB with App Runner (~$6/mo memory charge, no VPC IPs).
+
+Parameters:
+  ContainerImage:
+    Type: String
+    Description: ECR image URI for the Spring Boot backend
+
+Resources:
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: jobs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+
+  JobsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: jobs-dlq
+      MessageRetentionPeriod: 1209600
+
+  JobsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: jobs-queue
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt JobsDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  AppRunnerECRAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: build.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+
+  AppRunnerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: tasks.apprunner.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: jobs-runtime-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Scan
+                Resource: !GetAtt JobsTable.Arn
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt JobsQueue.Arn
+
+  JobsAutoScaling:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Properties:
+      AutoScalingConfigurationName: aws-springboot-jobs-asc
+      MinSize: 1
+      MaxSize: 2
+
+  JobsAppRunnerService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: aws-springboot-jobs
+      SourceConfiguration:
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerECRAccessRole.Arn
+        AutoDeploymentsEnabled: false
+        ImageRepository:
+          ImageIdentifier: !Ref ContainerImage
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: "8080"
+            RuntimeEnvironmentVariables:
+              - Name: AWS_JOBS_ENABLED
+                Value: "true"
+              - Name: AWS_JOBS_TABLE_NAME
+                Value: !Ref JobsTable
+              - Name: AWS_JOBS_QUEUE_URL
+                Value: !Ref JobsQueue
+              - Name: AWS_JOBS_QUEUE_POLLING_ENABLED
+                Value: "true"
+      InstanceConfiguration:
+        Cpu: "0.5 vCPU"
+        Memory: "1 GB"
+        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /jobs/mode
+        Interval: 20
+        Timeout: 5
+        HealthyThreshold: 1
+        UnhealthyThreshold: 5
+      AutoScalingConfigurationArn: !GetAtt JobsAutoScaling.AutoScalingConfigurationArn
+
+Outputs:
+  AppRunnerUrl:
+    Value: !Sub "https://${JobsAppRunnerService.ServiceUrl}"
+  ServiceArn:
+    Value: !GetAtt JobsAppRunnerService.ServiceArn
+  JobsTableName:
+    Value: !Ref JobsTable
+  JobsQueueUrl:
+    Value: !Ref JobsQueue
