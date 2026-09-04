@@ -6,6 +6,18 @@ Full-stack job queue demo: a React UI submits jobs that Spring Boot writes to **
 
 ---
 
+## Live Service
+
+| Endpoint | URL |
+|---|---|
+| **App** | https://{frontend-cloudfront-domain} |
+| **API** | https://{api-cloudfront-domain} |
+| **Portfolio demo** | https://bganguly.github.io/#job_runner |
+
+> ECS Fargate scales to zero when idle; click **Start Backend** to wake it (~30–60 s).
+
+---
+
 ## Using the App
 
 > **First visit — "Start Backend" button**
@@ -30,13 +42,6 @@ Full-stack job queue demo: a React UI submits jobs that Spring Boot writes to **
 | **IaC** | CloudFormation — VPC, DynamoDB, SQS, ECS cluster + Fargate task, ALB, IAM, CloudWatch logs |
 
 ---
-
-## Live Service
-
-| | URL |
-|---|---|
-| **App** | https://{frontend-cloudfront-domain} |
-| **API** | https://{api-cloudfront-domain} |
 
 ## Screenshots
 
