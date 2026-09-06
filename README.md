@@ -28,21 +28,6 @@ Full-stack job queue demo: a React UI submits jobs that Spring Boot writes to **
 
 ---
 
-## Stack
-
-| Component | Implementation |
-|---|---|
-| **Frontend** | React 18 + TypeScript + Vite; polls `GET /jobs/{id}` on a 1 s interval until terminal state |
-| **Backend** | Spring Boot 3 on ECS Fargate (:8080); two runtime modes: `LOCAL_MEMORY` (dev) and `AWS_DYNAMODB_SQS` (prod) |
-| **Job store** | DynamoDB `jobs` table keyed on `jobId`; `status` attribute drives the UI state machine |
-| **Async queue** | SQS standard queue + dead-letter queue; Spring Boot worker polls and transitions `PROCESSING → COMPLETED` |
-| **Scale-to-zero** | ECS desired count = 0 at rest; Lambda + API Gateway re-scales on demand and polls ALB health before returning |
-| **Frontend hosting** | S3 static hosting behind CloudFront (HTTPS); Vite build with `VITE_API_BASE_URL` injected at deploy time |
-| **Image build** | AWS CodeBuild builds and pushes the Spring Boot image to ECR from a source zip — no local Docker needed |
-| **IaC** | CloudFormation — VPC, DynamoDB, SQS, ECS cluster + Fargate task, ALB, IAM, CloudWatch logs |
-
----
-
 ## Architecture
 
 ### Job submission flow — step by step
@@ -165,11 +150,18 @@ local machine
        └─ invalidate CloudFront cache
 ```
 
-## Screenshots
+## Stack
 
-Main UI:
-
-![Spring Boot Job Runner UI](assets/screenshots/app-ui.png)
+| Component | Implementation |
+|---|---|
+| **Frontend** | React 18 + TypeScript + Vite; polls `GET /jobs/{id}` on a 1 s interval until terminal state |
+| **Backend** | Spring Boot 3 on ECS Fargate (:8080); two runtime modes: `LOCAL_MEMORY` (dev) and `AWS_DYNAMODB_SQS` (prod) |
+| **Job store** | DynamoDB `jobs` table keyed on `jobId`; `status` attribute drives the UI state machine |
+| **Async queue** | SQS standard queue + dead-letter queue; Spring Boot worker polls and transitions `PROCESSING → COMPLETED` |
+| **Scale-to-zero** | ECS desired count = 0 at rest; Lambda + API Gateway re-scales on demand and polls ALB health before returning |
+| **Frontend hosting** | S3 static hosting behind CloudFront (HTTPS); Vite build with `VITE_API_BASE_URL` injected at deploy time |
+| **Image build** | AWS CodeBuild builds and pushes the Spring Boot image to ECR from a source zip — no local Docker needed |
+| **IaC** | CloudFormation — VPC, DynamoDB, SQS, ECS cluster + Fargate task, ALB, IAM, CloudWatch logs |
 
 ---
 
@@ -184,6 +176,14 @@ Backend image build/push runs in AWS CodeBuild — local Docker is not required.
 
 `deploy.sh` uploads a source zip to S3, triggers CodeBuild to build and push the Spring Boot image to ECR, then deploys `infra.yaml` (CloudFormation: VPC, DynamoDB, SQS, ECS Fargate, ALB).
 `deploy-frontend.sh` deploys `frontend-infra.yaml` (S3 + CloudFront), builds the React app with `VITE_API_BASE_URL` set to `ApiHttpsUrl`, uploads `dist/` to S3, and invalidates the CloudFront cache.
+
+---
+
+## Screenshots
+
+Main UI:
+
+![Spring Boot Job Runner UI](assets/screenshots/app-ui.png)
 
 ---
 
