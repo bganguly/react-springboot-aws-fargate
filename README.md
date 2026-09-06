@@ -28,6 +28,8 @@ Full-stack job queue demo: a React UI submits jobs that Spring Boot writes to **
 
 ---
 
+## Stack
+
 | Component | Implementation |
 |---|---|
 | **Frontend** | React 18 + TypeScript + Vite; polls `GET /jobs/{id}` on a 1 s interval until terminal state |
@@ -171,7 +173,7 @@ Main UI:
 
 ---
 
-## Running
+## Deployment / Running
 
 Backend image build/push runs in AWS CodeBuild — local Docker is not required.
 
