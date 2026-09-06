@@ -41,14 +41,6 @@ Full-stack job queue demo: a React UI submits jobs that Spring Boot writes to **
 
 ---
 
-## Screenshots
-
-Main UI:
-
-![Spring Boot Job Runner UI](assets/screenshots/app-ui.png)
-
----
-
 ## Architecture
 
 ### Job submission flow — step by step
@@ -97,20 +89,6 @@ sequenceDiagram
 | **CodeBuild for image build** | Source zip uploaded to S3 triggers CodeBuild — no local Docker daemon needed; `deploy.sh` works from any machine |
 | **SQS dead-letter queue** | Jobs that fail processing exceed the retry limit are moved to a DLQ for inspection without blocking the main queue |
 | **DynamoDB key design** | Jobs keyed on UUID `jobId`; `status` is a plain string attribute — no secondary indexes needed for the single-item polling path |
-
----
-
-## Running
-
-Backend image build/push runs in AWS CodeBuild — local Docker is not required.
-
-```bash
-./artifacts/aws/deploy.sh <stack-name> <region> <account-id> <vpc-id> <subnet-a> <subnet-b>
-./artifacts/aws/deploy-frontend.sh <frontend-stack-name> <region> <bucket-name> <api-url> frontend
-```
-
-`deploy.sh` uploads a source zip to S3, triggers CodeBuild to build and push the Spring Boot image to ECR, then deploys `infra.yaml` (CloudFormation: VPC, DynamoDB, SQS, ECS Fargate, ALB).
-`deploy-frontend.sh` deploys `frontend-infra.yaml` (S3 + CloudFront), builds the React app with `VITE_API_BASE_URL` set to `ApiHttpsUrl`, uploads `dist/` to S3, and invalidates the CloudFront cache.
 
 ---
 
@@ -184,6 +162,28 @@ local machine
        ├─ upload dist/ → S3
        └─ invalidate CloudFront cache
 ```
+
+## Screenshots
+
+Main UI:
+
+![Spring Boot Job Runner UI](assets/screenshots/app-ui.png)
+
+---
+
+## Running
+
+Backend image build/push runs in AWS CodeBuild — local Docker is not required.
+
+```bash
+./artifacts/aws/deploy.sh <stack-name> <region> <account-id> <vpc-id> <subnet-a> <subnet-b>
+./artifacts/aws/deploy-frontend.sh <frontend-stack-name> <region> <bucket-name> <api-url> frontend
+```
+
+`deploy.sh` uploads a source zip to S3, triggers CodeBuild to build and push the Spring Boot image to ECR, then deploys `infra.yaml` (CloudFormation: VPC, DynamoDB, SQS, ECS Fargate, ALB).
+`deploy-frontend.sh` deploys `frontend-infra.yaml` (S3 + CloudFront), builds the React app with `VITE_API_BASE_URL` set to `ApiHttpsUrl`, uploads `dist/` to S3, and invalidates the CloudFront cache.
+
+---
 
 ## API
 
